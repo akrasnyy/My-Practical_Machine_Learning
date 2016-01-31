@@ -1,0 +1,280 @@
+Andrii Krasnyi  
+28 January 2016  
+# 'Practical Machine Learning: Prediction Assignment'
+#### author: "Andrii Krasnyi"
+#### date: "28 January 2016"
+
+## Load Data
+At this step we will load data
+
+```r
+## Assign variables
+
+setwd("C:/Users/akrasnyi/Documents/Deloitte Analytics/Training/Coursera/Practical Machine Learning/Assignment")
+training.url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testing.url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trn.file <- "./data/pml-training.csv"
+tst.file <- "./data/pml-testing.csv"
+
+if(!dir.exists("./data")){
+    dir.create("./data")
+}
+## load training file
+if (!file.exists(trn.file)){
+    download.file(training.url, destfile = trn.file)
+}
+## load testing data
+if (!file.exists(tst.file)){
+    download.file(testing.url, destfile = tst.file)
+}
+```
+
+## Read data from file
+next step to read data from file into R 
+
+
+```r
+trn.original <- read.csv(trn.file)
+tst.original <- read.csv(tst.file)
+
+dim(trn.original)
+```
+
+```
+## [1] 19622   160
+```
+
+```r
+dim(tst.original)
+```
+
+```
+## [1]  20 160
+```
+
+
+```r
+# head (trn.original)
+sum(complete.cases(trn.original))
+```
+
+```
+## [1] 406
+```
+brief check above shows that significant number of variables with null values and data-set required preparation before it can  be use for predictions
+
+
+## Data Cleaning
+We are going to exclude columns from raw data-set that do cont contain any values. We will also delete the first 7 columns, namely: X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, and num_window because those columns have no relevance on impact on the prediction outcome.
+We also remove the columns with more than 80% of missing values to reduce the noise in the data.
+
+Option 1
+
+```r
+library(plyr,logical.return = FALSE,
+        warn.conflicts = FALSE, quietly = TRUE)
+library (dplyr,logical.return = FALSE,
+        warn.conflicts = FALSE, quietly = TRUE)
+library(caret, logical.return = FALSE,
+        warn.conflicts = FALSE, quietly = TRUE)
+# trn.set.1 <- trn.original[,-nearZeroVar(trn.original)]
+
+# Removing columns with missing values
+trn.set.2 <- select(trn.original,-nearZeroVar(trn.original)) 
+dim(trn.set.2)
+```
+
+```
+## [1] 19622   100
+```
+
+```r
+# Removing columns with N/A more than 80%
+trn.temp <-colSums(is.na(trn.set.2)) <= 0.8*nrow(trn.set.2)
+trn.set.2.1  <- select(trn.set.2, which(trn.temp))
+# Removing first seven columns
+trn.set.2.1  <- select(trn.set.2.1, -c(1:7))
+
+trn.set.2.1$classe <- as.factor(trn.set.2.1$classe)
+rm(trn.temp)
+dim(trn.set.2.1)
+```
+
+```
+## [1] 19622    52
+```
+
+```r
+# Aligning columns in testing and training data-sets
+#tst.set.2  <- select(tst.original, which(names(tst.original) %in% names(trn.set.2.1) ))
+#dim(tst.set.2)
+```
+
+#Data slising
+
+At this step we will partition data for training and testing subsets. We will use the 70% of the training data-set for training the prediction model and 30% to test the model. 
+
+
+```r
+inTrain <- createDataPartition(trn.set.2.1$classe,
+                              p=0.7, list=FALSE)
+                 training.trn.set <- trn.set.2.1[inTrain,]
+                 testing.trn.set <- trn.set.2.1[-inTrain,]
+                 dim(training.trn.set); dim(testing.trn.set)
+```
+
+```
+## [1] 13737    52
+```
+
+```
+## [1] 5885   52
+```
+
+## Model Fitting
+
+Train the models using 5 methods with 5-fold cross validation:
+1.SVM
+2.Random Forest
+3.Stochastic Gradient Boosting
+4.Navie Bayes
+5.LDA
+
+Above models use different  approach  for prediction such as linear relation, independence, etc. and could give us a wide range of insights on which model fits best.
+We will also check if combined model from above 5 will 'give us better result than each individual model.
+
+```
+set.seed(3306) 
+ctrl = trainControl(method="cv", number=5)
+models = list("svmLinear", "rf", "gbm", "nb", "lda") 
+
+print(models[[1]])
+modSVM = train(classe ~ ., data=training.trn.set, method="svmLinear", trControl = ctrl)
+
+print(models[[2]])
+modRF = train(classe ~ ., data=training.trn.set, method="rf", trControl=ctrl, prox=T, ntree=200)
+
+print(models[[3]])
+modGBM = train(classe ~ ., data=training.trn.set, method="gbm", trControl=ctrl, verbose=FALSE)
+
+print(models[[4]])
+modNB = train(classe ~ ., data=training.trn.set, method="nb", trControl=ctrl)
+
+print(models[[5]])
+modLDA = train(classe ~ ., data=training.trn.set, method="lda", trControl=ctrl)
+
+```
+
+## Select Prediction Model  
+
+We will then use the original testing data-set from "pml-testing.csv" to make the predictions.
+
+```
+predSVM = predict(modSVM, newdata=testing.trn.set)
+cm1 <- confusionMatrix(predSVM, testing.trn.set$classe)
+coef1 <- cm1$overall[1]
+
+predRF = predict(modRF, newdata=testing.trn.set)
+cm2 <- confusionMatrix(predRF, testing.trn.set$classe)
+coef2 <- cm2$overall[1]
+print("Variables importance in model")
+vi = as.data.frame(varImp(modRF$finalModel))
+
+predGBM = predict(modGBM, newdata=testing.trn.set)
+cm3 <- confusionMatrix(predRF, testing.trn.set$classe)
+coef3 <- cm3$overall[1]
+
+predNB = predict(modNB, newdata=testing.trn.set)
+cm4 <- confusionMatrix(predNB, testing.trn.set$classe)
+coef4 <- cm4$overall[1]
+
+predLDA = predict(modLDA, newdata=testing.trn.set)
+cm5 <- confusionMatrix(predLDA, testing.trn.set$classe)
+coef5 <- cm5$overall[1]
+
+# Case with combined prediction models into one  model 
+pred <- data.frame(predSVM, predRF, predGBM, predNB, predLDA, classe=testing.trn.set$classe) 
+fit <- train(classe ~ ., data=training.trn.set, method="rf")
+predFit <- predict(fit, newdata=testing.trn.set )
+cm6 <- confusionMatrix(predFit, testing.trn.set$classe)
+coef6 <- cm6$overall[1]
+```
+### Accuracy of aglorithm 
+
+Accuracy coefficients in following order:"svmLinear", "rf", "gbm", "nb", "lda","combined model"
+```
+print(paste(coef1, coef2, coef3, coef4, coef5, coef6))  
+                 
+```
+```
+## [1] "0.777909940526763 0.994902293967715 0.994902293967715 0.744435004248088 0.688360237892948 0.994562446898896"
+```
+Form The analysis of accuracy coefficients we can see that Random Forest method produced most accurate prediction. Coefficient for Random Forest is higher that for combination of 5 different methods. 
+
+Here we print the performance of Random Forest model on the validation data set testing.trn.set. A Confusion Matrix, the estimated accuracy and the estimated out-of-sample error of the model are calculated.
+
+```
+cm2
+
+```
+```
+## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction    A    B    C    D    E
+##          A 1673    6    0    0    0
+##          B    0 1127    5    0    0
+##          C    1    4 1020    9    0
+##          D    0    1    1  953    0
+##          E    0    1    0    2 1082
+## 
+## Overall Statistics
+##                                           
+##                Accuracy : 0.9949          
+##                  95% CI : (0.9927, 0.9966)
+##     No Information Rate : 0.2845          
+##     P-Value [Acc > NIR] : < 2.2e-16       
+##                                           
+##                   Kappa : 0.9936          
+##  Mcnemar's Test P-Value : NA              
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity            0.9994   0.9895   0.9942   0.9886   1.0000
+## Specificity            0.9986   0.9989   0.9971   0.9996   0.9994
+## Pos Pred Value         0.9964   0.9956   0.9865   0.9979   0.9972
+## Neg Pred Value         0.9998   0.9975   0.9988   0.9978   1.0000
+## Prevalence             0.2845   0.1935   0.1743   0.1638   0.1839
+## Detection Rate         0.2843   0.1915   0.1733   0.1619   0.1839
+## Detection Prevalence   0.2853   0.1924   0.1757   0.1623   0.1844
+## Balanced Accuracy      0.9990   0.9942   0.9956   0.9941   0.9997
+```
+## Prediction on Testing Dataset
+
+Now we have a trained model with 98%+ accuracy, we will use this model to predict the outcome on the given raw testing data from the file "pml-testing.csv".
+
+
+```
+
+# final prediction on original testing set (20 samples)
+predict.Test1 <- predict(modRF, tst.original)
+#predict.Test2<- predict(modRF, tst.set.2)
+
+
+# adding the predcted class to the testing data set (for reference)
+#tst.original$classe <- predict.Test1
+
+#final output
+predict.Test1
+#fin.output.compare <- rbind (predict.Test1,predict.Test2)
+#fin.output.compare
+```
+```
+##  [1] B A B A A E D B A A B C B A E E A B B B
+## Levels: A B C D E
+```
+## Conclusion 
+In project we built models using 5 different machine learning algorithms. Out of those 5 models, Random Forest algorithm demonstrated best accuracy
+Random Forest is best method, and Naive Bayes and SVM perform the worst. Mostly, it may be because the actual model is not linear, and the predictors are not strictly independent to each other.
+We used Random Forest to made predictions for original testing set for the assignment.  
